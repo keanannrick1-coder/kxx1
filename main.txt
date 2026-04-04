@@ -1,8 +1,4 @@
--- [[ 1. 兼容性补丁 - 核心逻辑 ]] --
-local can_save = (writefile and isfile and readfile) -- 判断执行器是否支持文件系统
-local record_file = ".dou_history.dat"
-
--- [[ 2. 配置中心 ]] --
+-- [[ 1. 配置中心 ]] --
 local CONFIG = {
     BLACKLIST = "https://raw.githubusercontent.com/keanannrick1-coder/kxx1/refs/heads/main/blacklist.txt",
     WHITELIST = "https://raw.githubusercontent.com/keanannrick1-coder/kxx1/refs/heads/main/whitelist.txt",
@@ -11,23 +7,23 @@ local CONFIG = {
     WEBHOOK = "https://discord.com/api/webhooks/1482780872683028631/RuJpjpKJeZhMrh0Xl_wKeVgzOtzlwDGSJiKgOmVOs4ZstLlIk3w4zF_o5xQ98y9I_Izk"
 }
 
--- 基础变量
 local Player = game:GetService("Players").LocalPlayer
 local UserId = tostring(math.floor(Player.UserId))
 local UserName = Player.Name
 local HttpService = game:GetService("HttpService")
+local record_file = ".dou_history.dat" -- 本地记录文件
 
--- 通用云端获取函数
+-- 获取云端数据
 local function getCloud(url)
     local s, content = pcall(function() return game:HttpGet(url) end)
-    return s and content:gsub("^%s*(.-)%s*$", "%1") or ""
+    if s and content then return content:gsub("^%s*(.-)%s*$", "%1") end
+    return ""
 end
 
 -- Webhook 推送
 local function sendLog(tag, msg, color)
     pcall(function()
-        local req = (syn and syn.request) or (http and http.request) or http_request or request
-        req({
+        request({
             Url = CONFIG.WEBHOOK,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
@@ -42,31 +38,70 @@ local function sendLog(tag, msg, color)
     end)
 end
 
--- [[ 3. 权限预检 ]] --
+-- [[ 2. 权限预检 ]] --
 local b_list = getCloud(CONFIG.BLACKLIST)
 local w_list = getCloud(CONFIG.WHITELIST)
 
--- A. 白名单：完全豁免
+-- 白名单：豁免所有检测
 if string.find("\n"..w_list:lower().."\n", "\n"..UserId:lower().."\n") or string.find("\n"..w_list:lower().."\n", "\n"..UserName:lower().."\n") then
     loadstring(game:HttpGet(CONFIG.MAIN_SCRIPT))()
     return
 end
 
--- B. 黑名单：强制踢出
+-- 黑名单：永久封禁
 if string.find("\n"..b_list:lower().."\n", "\n"..UserId:lower().."\n") or string.find("\n"..b_list:lower().."\n", "\n"..UserName:lower().."\n") then
-    Player:Kick("\n[豆.dou 系统]\n黑名单限制。")
+    Player:Kick("\n[豆.dou 系统]\n您的账号已被列入黑名单。")
     return
 end
 
--- C. 内存锁：防止同一局重复点
-if _G.DOU_LOADED == true then
-    game:GetService("StarterGui"):SetCore("SendNotification", {Title = "豆.dou", Text = "脚本正在运行中..."})
-    return
-end
+-- [[ 3. UI 创建逻辑 (紫色圆角拖动版) ]] --
+local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui"))
+local MainFrame = Instance.new("Frame", ScreenGui)
+local UICorner = Instance.new("UICorner", MainFrame)
+local UIGradient = Instance.new("UIGradient", MainFrame)
+local Title = Instance.new("TextLabel", MainFrame)
+local InputBox = Instance.new("TextBox", MainFrame)
+local ConfirmBtn = Instance.new("TextButton", MainFrame)
 
--- [[ 4. UI 验证逻辑（整合防重复提示） ]] --
--- 此处省略 UI 创建代码（沿用之前的紫色圆角可拖动版）
+MainFrame.Size = UDim2.new(0, 300, 0, 180)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -90)
+MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+MainFrame.Active = true
+MainFrame.Draggable = true
+UICorner.CornerRadius = UDim.new(0, 15)
 
+UIGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(110, 40, 190)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(170, 60, 255))
+}
+
+Title.Size = UDim2.new(1, 0, 0, 45)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.Text = "DOU SYSTEM VERIFY"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 18
+
+InputBox.Size = UDim2.new(0, 240, 0, 40)
+InputBox.Position = UDim2.new(0.5, -120, 0.45, 0)
+InputBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+InputBox.BackgroundTransparency = 0.5
+InputBox.Font = Enum.Font.Gotham
+InputBox.PlaceholderText = "Enter Key..."
+InputBox.Text = ""
+InputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 8)
+
+ConfirmBtn.Size = UDim2.new(0, 120, 0, 35)
+ConfirmBtn.Position = UDim2.new(0.5, -60, 0.78, 0)
+ConfirmBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+ConfirmBtn.BackgroundTransparency = 0.9
+ConfirmBtn.Font = Enum.Font.GothamBold
+ConfirmBtn.Text = "VERIFY"
+ConfirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", ConfirmBtn).CornerRadius = UDim.new(0, 10)
+
+-- [[ 4. 核心验证逻辑 ]] --
 local attempts = 0
 local current_key = getCloud(CONFIG.REMOTE_KEY)
 
@@ -74,29 +109,31 @@ ConfirmBtn.MouseButton1Click:Connect(function()
     local input = InputBox.Text:gsub("%s+", "")
     
     if input == current_key and current_key ~= "" then
-        -- 核心：检测重复使用
-        if can_save then
-            if isfile(record_file) and readfile(record_file) == input then
-                sendLog("🚫 体验卡超限", "检测到本地已有激活记录，已执行拦截。", 16711680)
-                Player:Kick("\n体验卡已超次数")
+        -- 检查该卡密是否已在该设备上使用过
+        if isfile(record_file) then
+            local history = readfile(record_file)
+            if history == input then
+                -- 重复使用相同卡密被踢
+                sendLog("🚫 体验过期拦截", "玩家尝试重复使用同一个旧卡密，已踢出。", 16711680)
+                Player:Kick("\n体验卡已超次数") -- 你要求的提示语
                 return
             end
-            writefile(record_file, input) -- 记录成功激活的卡密
         end
 
-        -- 验证成功：进入主脚本
-        _G.DOU_LOADED = true
-        sendLog("✅ 验证成功", "新用户进入系统。", 65280)
+        -- 首次验证成功：写入记录，运行脚本
+        writefile(record_file, input)
+        sendLog("✅ 验证成功", "新用户正确输入卡密进入系统。", 65280)
         ScreenGui:Destroy()
         loadstring(game:HttpGet(CONFIG.MAIN_SCRIPT))()
     else
+        -- 验证失败
         attempts = attempts + 1
         if attempts >= 3 then
-            sendLog("⚠️ 尝试过多", "输错 3 次被踢。", 16753920)
+            sendLog("⚠️ 爆破拦截", "连续输错 3 次被踢。", 16753920)
             Player:Kick("错误次数过多")
         else
             InputBox.Text = ""
-            InputBox.PlaceholderText = "Wrong Key ("..attempts.."/3)"
+            InputBox.PlaceholderText = "Wrong ("..attempts.."/3)"
         end
     end
 end)
